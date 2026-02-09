@@ -5,12 +5,16 @@ import cl.duoc.finance_bff_web.model.EstadoFinancieroDTO;
 import cl.duoc.finance_bff_web.model.ResumenWebDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity; // <--- NUEVO
+import org.springframework.http.HttpHeaders; // <--- NUEVO
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.context.request.RequestContextHolder; // <--- NUEVO
+import org.springframework.web.context.request.ServletRequestAttributes; // <--- NUEVO
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -22,8 +26,22 @@ public class FinanceWebServiceImpl implements FinanceWebService {
     @Autowired
     private RestTemplate restTemplate;
 
-    // URL del Backend Finance-Batch (Core)
     private final String BACKEND_URL = "http://localhost:8080/api/v1";
+
+    // --- NUEVO MÉTODO AUXILIAR: Obtener el token de la petición actual ---
+    private HttpHeaders getHeadersConToken() {
+        HttpHeaders headers = new HttpHeaders();
+        // Obtenemos la petición HTTP que llegó al BFF
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            // Extraemos el header "Authorization" original (el que trae el Bearer token)
+            String authHeader = attributes.getRequest().getHeader("Authorization");
+            if (authHeader != null) {
+                headers.set("Authorization", authHeader);
+            }
+        }
+        return headers;
+    }
 
     @Override
     public ResumenWebDTO obtenerResumenCuenta(Long id) {
@@ -31,20 +49,28 @@ public class FinanceWebServiceImpl implements FinanceWebService {
         resumen.setFechaConsulta(LocalDateTime.now());
 
         try {
-            // LLAMADA 1: Obtener datos de la Cuenta
-            // GET http://localhost:8080/api/v1/cuentas/{id}
-            String urlCuenta = BACKEND_URL + "/cuentas/" + id;
-            CuentaDTO cuenta = restTemplate.getForObject(urlCuenta, CuentaDTO.class);
-            resumen.setCuenta(cuenta);
+            // Preparamos la entidad HTTP con los headers (el token)
+            HttpEntity<String> entity = new HttpEntity<>(getHeadersConToken());
 
-            // LLAMADA 2: Obtener movimientos (Transacciones)
-            // GET http://localhost:8080/api/v1/cuentas/{id}/transacciones
+            // LLAMADA 1: Obtener datos de la Cuenta (CON TOKEN)
+            String urlCuenta = BACKEND_URL + "/cuentas/" + id;
+            
+            // Usamos exchange en lugar de getForObject para poder enviar 'entity'
+            ResponseEntity<CuentaDTO> responseCuenta = restTemplate.exchange(
+                urlCuenta, 
+                HttpMethod.GET, 
+                entity, 
+                CuentaDTO.class
+            );
+            resumen.setCuenta(responseCuenta.getBody());
+
+            // LLAMADA 2: Obtener movimientos (CON TOKEN)
             String urlMovimientos = BACKEND_URL + "/cuentas/" + id + "/transacciones";
             
             ResponseEntity<List<EstadoFinancieroDTO>> responseMovimientos = restTemplate.exchange(
                 urlMovimientos,
                 HttpMethod.GET,
-                null,
+                entity, // <--- Aquí va el token
                 new ParameterizedTypeReference<List<EstadoFinancieroDTO>>() {}
             );
             
@@ -52,20 +78,15 @@ public class FinanceWebServiceImpl implements FinanceWebService {
             resumen.setMensaje("Consulta Exitosa - Cliente Web (Datos Completos)");
 
         } catch (HttpClientErrorException.NotFound e) {
-            // Manejo de error 404 si la cuenta no existe
-            resumen.setMensaje("Error: La cuenta ID " + id + " no fue encontrada en el sistema Core.");
-            resumen.setCuenta(null);
-            resumen.setMovimientos(Collections.emptyList());
+            resumen.setMensaje("Error: La cuenta ID " + id + " no fue encontrada.");
+        } catch (HttpClientErrorException.Forbidden e) { // <--- Capturamos error de seguridad
+            resumen.setMensaje("Error de Seguridad: Token inválido o expirado.");
         } catch (ResourceAccessException e) {
-            // Manejo de error si el Backend Finance-Batch está apagado
-            resumen.setMensaje("Error Crítico: No se pudo conectar con el sistema Core Finance-Batch. Verifique que esté encendido.");
-            resumen.setMovimientos(Collections.emptyList());
+            resumen.setMensaje("Error Crítico: No se pudo conectar con Finance-Batch.");
         } catch (Exception e) {
-            // Otros errores
             resumen.setMensaje("Error interno: " + e.getMessage());
-            resumen.setMovimientos(Collections.emptyList());
         }
 
         return resumen;
     }
-}   
+}
