@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
  * Clase principal de la aplicacion Finance BFF Web.
@@ -22,9 +23,16 @@ import org.springframework.web.client.RestTemplate;
  * @version 0.0.1-SNAPSHOT
  */
 @SpringBootApplication
+@EnableDiscoveryClient
 public class FinanceBffWebApplication {
 
     public static void main(String[] args) {
+        // Cargar variables del .env en el sistema para que Spring Boot (ej: OAuth2) las
+        // detecte
+        io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.configure().ignoreIfMissing()
+                .load();
+        dotenv.entries().forEach(entry -> System.setProperty(entry.getKey(), entry.getValue()));
+
         SpringApplication.run(FinanceBffWebApplication.class, args);
     }
 
