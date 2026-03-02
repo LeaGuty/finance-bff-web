@@ -15,7 +15,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-
+import org.springframework.beans.factory.annotation.Value;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -30,7 +30,8 @@ public class FinanceWebServiceImpl implements FinanceWebService {
     @Autowired
     private cl.duoc.finance_bff_web.security.JwtUtil jwtUtil;
 
-    private final String BACKEND_URL = "http://localhost:8080/api/v1";
+    @Value("${backend.url:http://localhost:8080/api/v1}")
+    private String BACKEND_URL;
 
     /**
      * Extrae el token si viene de Postman, o fabrica uno interno si viene de GitHub

@@ -10,18 +10,9 @@ import org.springframework.web.bind.annotation.RestController;
 import cl.duoc.finance_bff_web.model.ResumenWebDTO;
 import cl.duoc.finance_bff_web.service.FinanceWebService;
 
-/**
- * Controlador REST principal del BFF Web.
- *
- * Expone los endpoints protegidos para clientes web bajo la ruta /bff/web/v1.
- * Requiere autenticacion JWT con rol CLIENTE_WEB (configurado en SecurityConfig).
- *
- * Endpoints:
- * - GET /bff/web/v1/cuentas/{id} - Obtiene resumen completo de una cuenta
- *
- * Ejemplo de uso con curl:
- *   curl -k -H "Authorization: Bearer {token}" https://localhost:8081/bff/web/v1/cuentas/1
- */
+// IMPORTANTE: Aquí importamos el productor que acabas de crear
+import cl.duoc.finance_bff_web.kafka.AuditoriaProducer;
+
 @RestController
 @RequestMapping("/bff/web/v1")
 public class FinanceWebController {
@@ -29,19 +20,21 @@ public class FinanceWebController {
     @Autowired
     private FinanceWebService financeWebService;
 
-    /**
-     * Obtiene el resumen financiero completo de una cuenta para el cliente web.
-     *
-     * Combina datos de cuenta y transacciones en una unica respuesta.
-     * La autenticacion y autorizacion se validan en el JwtFilter antes
-     * de llegar a este metodo.
-     *
-     * @param id Identificador de la cuenta a consultar
-     * @return ResponseEntity con ResumenWebDTO conteniendo cuenta y movimientos
-     */
+    // 1. INYECTAMOS EL NUEVO PRODUCTOR DE KAFKA
+    @Autowired
+    private AuditoriaProducer auditoriaProducer;
+
     @GetMapping("/cuentas/{id}")
     public ResponseEntity<ResumenWebDTO> obtenerResumenClienteWeb(@PathVariable Long id) {
+        
+        // Obtiene los datos como siempre (llamando al Core)
         ResumenWebDTO respuesta = financeWebService.obtenerResumenCuenta(id);
+        
+        // 2. ¡NUEVO! Dispara el mensaje a Kafka de forma asíncrona
+        // Convertimos el Long a String para enviarlo en el mensaje
+        auditoriaProducer.registrarConsulta(String.valueOf(id), "BFF-WEB");
+        
+        // Retorna la respuesta al cliente sin demoras
         return ResponseEntity.ok(respuesta);
     }
 }
